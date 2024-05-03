@@ -1,8 +1,15 @@
 from setuptools import setup, find_packages
+import sys
 
 def get_requirements():
     with open('requirements.txt', 'r') as f:
-        return f.read().splitlines()
+        req = f.read().splitlines()
+    python_version = f'cp{sys.version_info.major}{sys.version_info.minor}'
+    if sys.platform == 'win32':
+        req.append(f'torch @https://download.pytorch.org/whl/cu121/torch-2.3.0%2Bcu121-{python_version}-{python_version}-win_amd64.whl')
+    else:
+        req.append('torch')
+    return req
 
 setup(
     name='mindvault',
