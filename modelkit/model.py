@@ -2,14 +2,16 @@ from .architecture  import Decoder
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
+from datakit.knn import KNN
 
 
 class MindVaultGPT(nn.Module):
-    def __init__(self, vocab_size, n_embd = 256, n_heads = 4, n_layers = 4, dropout = 0.2, block_size = 64) -> None:
+    def __init__(self, vocab_size, n_embd = 256, n_heads = 4, batch_size = 32, block_size = 128, seg = 5, top_k = 3, dropout = 0.2, n_layers = 4) -> None:
         super().__init__()
         self.token_emb = nn.Embedding(vocab_size, n_embd)
         self.pos_emb = nn.Embedding(block_size, n_embd)
-        self.decoder = nn.Sequential(*[Decoder(n_embd, n_heads, dropout) for _ in range(n_layers)])
+        
+        self.decoder = nn.Sequential(*[Decoder(n_embd, n_heads, batch_size, block_size, seg, top_k, dropout) for _ in range(n_layers)])
         self.ln = nn.LayerNorm(n_embd)
         self.fc = nn.Linear(n_embd, vocab_size)
 
