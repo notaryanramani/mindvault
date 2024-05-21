@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from datakit import KNN
+from .knn import KNN
 
 
 class Head(nn.Module):

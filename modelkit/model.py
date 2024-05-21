@@ -2,7 +2,6 @@ from .architecture  import Decoder
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-from datakit.knn import KNN
 
 
 class MindVaultGPT(nn.Module):
