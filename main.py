@@ -43,9 +43,10 @@ for e in range(epochs):
     t_loader = tqdm(t_loader, leave=False)
     t_loader.set_description(f'Epoch {e}/{epochs}')
     for x, y in t_loader:
+        k ,v = None, None
         for xi, yi in zip(x, y):
             xi, yi = xi.to(device), yi.to(device)
-            logits, t_loss = m(xi, yi)
+            logits, k, v, t_loss = m(xi, yi, k, v)
             optim.zero_grad()
             t_loss.backward()
             optim.step()
@@ -57,7 +58,7 @@ for e in range(epochs):
     for x, y in v_loader:
         for xi, yi in zip(x, y):
             xi, yi = xi.to(device), yi.to(device)
-            logits, v_loss = m(xi, yi)
+            logits, _, _, v_loss = m(xi, yi)
             v_losses.append(v_loss.item())
             v_loader.set_postfix(loss=v_loss.item())
     v_loss_avg = torch.tensor(v_losses).mean().item()

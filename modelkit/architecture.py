@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from .knn import KNN
+import torch.nn.functional as F
 
 
 class Head(nn.Module):
@@ -18,35 +19,51 @@ class Head(nn.Module):
         self.gate = nn.Parameter(torch.randn(1))
 
         self.dropout = nn.Dropout(dropout)
-        self.register_buffer("mask", torch.tril(torch.ones(n_embd, n_embd)))
+        self.head_size = head_size
 
-    def forward(self, x):
-        B, T, C = x.shape
-
+    def forward(self, x, ki=None, vi=None, idx=None):
+        Bq, Tq, Cq = x.shape
+        
         q = self.q(x)
         k = self.k(x)
         v = self.v(x)
+        self.knn.add(k, v)
+
+        start_idx = idx * self.head_size 
+        end_idx = start_idx + self.head_size
+
+        if ki is not None:
+            k = torch.cat([ki[:, :, start_idx:end_idx], k], dim=-2)
+            kv_length = ki.shape[1]
+        if vi is not None:
+            v = torch.cat([vi[:, :, start_idx:end_idx], v], dim=-2)
+
+        Bk, Tk, Ck = k.shape
 
         # scaled dot product attention
-        att = (q @ k.transpose(-2, -1)) / C ** 0.5
-        att = att.masked_fill(self.mask[:x.size(1), :x.size(1)] == 0, float("-inf"))
-        att = torch.softmax(att, dim=-1)
-        out = att @ v
+        mask = torch.tril(torch.ones(Tq, Tk), diagonal=Tk - Tq).to(q.device)
+        out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
 
         # memory attention 
-        self.knn.add(k, v)
         mem_kvs = self.knn.search(q, self.top_k) #  return shape: (B, T, 3, 2, HS)
         mem_k, mem_v = mem_kvs[:, :, :, 0, :], mem_kvs[:, :, :, 1, :]
-        mem_att = (q.unsqueeze(-2) @ mem_k.transpose(-2, -1)) / C ** 0.5 
+        mem_att = (q.unsqueeze(-2) @ mem_k.transpose(-2, -1)) / Cq ** 0.5 
         mem_att = torch.softmax(mem_att, dim=-1)
         mem_out = mem_att @ mem_v
-        mem_out = mem_out.view(B, T, -1)
+        mem_out = mem_out.view(Bq, Tq, -1)
 
         # gating mechanism
         md_out = out * self.gate + (mem_out * (1 - self.gate)) 
         md_out = self.dropout(out)
 
-        return md_out
+        if ki is not None:
+            k = k[:, :kv_length, :]
+            ak = k[:, kv_length:, :]
+        if vi is not None:
+            v = v[:, :kv_length, :]
+            av = v[:, kv_length:, :]
+
+        return md_out, k, v, ak, av
     
 
 class MultiHeadAttention(nn.Module):
@@ -56,10 +73,23 @@ class MultiHeadAttention(nn.Module):
         self.knn = KNN(head_size, batch_size * block_size * seg)
         self.heads = nn.ModuleList([Head(n_embd, head_size, self.knn, top_k, dropout) for _ in range(n_heads)])
 
-    def forward(self, x):
-        out = torch.cat([head(x) for head in self.heads], dim=-1)
+    def forward(self, q, k=None, v=None):
+        out, keys, values = [], [], []
+        akeys, avalues = [], []
+        for idx, head in enumerate(self.heads):
+            oi, k, v, ak, av = head(q, k, v, idx)
+            out.append(oi)
+            akeys.append(ak)
+            avalues.append(av)
+            keys.append(k)
+            values.append(v)
+
+        out = torch.cat(out, dim=-1)
+        akeys = torch.cat(akeys, dim=-1)
+        avalues = torch.cat(avalues, dim=-1)
+        
         self.knn.clear()
-        return out
+        return out, keys, values, akeys, avalues
 
 
 class FeedForward(nn.Module):
@@ -89,10 +119,11 @@ class Decoder(nn.Module):
         self.ln2 = nn.LayerNorm(n_embd)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
+    def forward(self, x, k=None, v=None):
         x = self.ln1(x)
-        x = x + self.attn(x)
+        q, k, v, ak, av = self.attn(x, k, v)
+        x = x + q
         x = self.ln2(x)
         x = x + self.ff(x)
         out = self.dropout(x)
-        return out
+        return out, k, v, ak, av

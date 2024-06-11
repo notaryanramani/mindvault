@@ -2,3 +2,4 @@ tiktoken
 numpy
 faiss-cpu
 packaging
+tqdm
