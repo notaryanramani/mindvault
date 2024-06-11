@@ -87,6 +87,8 @@ class MultiHeadAttention(nn.Module):
         out = torch.cat(out, dim=-1)
         akeys = torch.cat(akeys, dim=-1)
         avalues = torch.cat(avalues, dim=-1)
+        keys = torch.cat(keys, dim=-1)
+        values = torch.cat(values, dim=-1)
         
         self.knn.clear()
         return out, keys, values, akeys, avalues
